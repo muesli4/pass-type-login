@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# dependencies: libnotify, pass, xclip, xdotool, xmlstarlet, xorg-setxkbmap
+
+# This script does the following:
+#     1. Read a pattern to match on a directory within pass from the default clipboard
+#     2. Find matched directory within a suffix, discarding multiple matches.
+#     3. Uses the first file within that directory as username and the content as password.
+#     4. Types the username (only when second argument given) and the password
+#        after 2 seconds each, with announcement via libnotify.
+
+PASSWORD_STORE="$HOME/.password-store"
+PROMPT_DELAY=2s
+
+unlock_failed() {
+    echo "No password given." >&2
+    exit 1
+}
+
+prompt_field() {
+    notify-send -i info -t 1000 "pass" "Select field for $1."
+    sleep $PROMPT_DELAY
+}
+
+type_stdin() {
+    xargs xdotool type
+}
+
+
+if [ -n "$1" ]; then
+
+    # prefix to look at
+    PREFIX="$1"
+
+    # read search pattern from clipboard
+    PAT="$(xclip -o)"
+
+    cd "$PASSWORD_STORE"
+
+    # lookup
+    GPG_PATH="$(find "$PREFIX" -type d -iname "*$PAT*" | head -n 1 | xargs -I '{}' find '{}' -type f | head -n 1)"
+
+    PASS_PATH="${GPG_PATH%.gpg}"
+
+    if [ -n "$PASS_PATH" ]; then
+
+        echo "$PASS_PATH"
+
+        USERNAME=`basename "$PASS_PATH"`
+
+        # TODO work arround xdotool bug: prints q when @ requested
+        # TODO try xdotool-git from aur
+        setxkbmap
+
+        # unlock gpg-agent beforehand (TODO with gpg?)
+        (pass show "$PASS_PATH" > /dev/null) || unlock_failed
+
+        # insert username if requested
+        if [ -n "$2" ]; then
+            prompt_field 'login'
+            echo "$USERNAME" | type_stdin
+        fi
+        prompt_field 'password'
+        (pass show "$PASS_PATH" || unlock_failed) | type_stdin
+    else
+        notify-send \
+            -i error \
+            -t 4000 \
+            "pass" \
+            "No password found for search pattern:
+            <i>'$(xmlstarlet escape "$PAT")'</i>."
+    fi
+fi
