@@ -23,7 +23,7 @@ prompt_field() {
 }
 
 type_stdin() {
-    xargs xdotool type
+    xargs -0 xdotool type
 }
 
 
