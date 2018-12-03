@@ -13,7 +13,7 @@ This is an excerpt from `~/.xbindkeysrc`:
 ```
 # password helpers
 # type login information with pass
-"pass-type-login.sh web/ true"
+"pass-type-login.sh web/ --login-first"
     m:0x40 + c:34
 
 # type password information with pass

@@ -10,7 +10,7 @@
 #        after 2 seconds each, with announcement via libnotify.
 
 PASSWORD_STORE="$HOME/.password-store"
-PROMPT_DELAY=2s
+PROMPT_DELAY_SECONDS=2
 
 unlock_failed() {
     echo "No password given." >&2
@@ -18,56 +18,73 @@ unlock_failed() {
 }
 
 prompt_field() {
-    notify-send -i info -t 1000 "pass" "Select field for $1."
-    sleep $PROMPT_DELAY
+    notify-send -i info -t "${PROMPT_DELAY_SECONDS}000" "pass" "Select field for $1."
+    sleep "${PROMPT_DELAY_SECONDS}s"
 }
 
-type_stdin() {
-    xargs -0 xdotool type
+type_arg0() {
+    xdotool type "$1"
 }
 
+print_usage() {
+    echo "Usage:"
+    echo "    $0 PREFIX [--with-login]"
+    echo
+    echo "    PREFIX            The prefix within the pass directory to look in."
+    echo
+    echo "    --login-first     Type the login first and then the password."
+}
 
-if [ -n "$1" ]; then
-
+if [ "$#" -eq 0 ]; then
+    print_usage
+else
     # prefix to look at
     PREFIX="$1"
 
     # read search pattern from clipboard
     PAT="$(xclip -o)"
 
-    cd "$PASSWORD_STORE"
-
-    # lookup
-    GPG_PATH="$(find "$PREFIX" -type d -iname "*$PAT*" | head -n 1 | xargs -I '{}' find '{}' -type f | head -n 1)"
-
-    PASS_PATH="${GPG_PATH%.gpg}"
-
-    if [ -n "$PASS_PATH" ]; then
-
-        echo "$PASS_PATH"
-
-        USERNAME=`basename "$PASS_PATH"`
-
-        # TODO work arround xdotool bug: prints q when @ requested
-        # TODO try xdotool-git from aur
-        setxkbmap
-
-        # unlock gpg-agent beforehand (TODO with gpg?)
-        (pass show "$PASS_PATH" > /dev/null) || unlock_failed
-
-        # insert username if requested
-        if [ -n "$2" ]; then
-            prompt_field 'login'
-            echo "$USERNAME" | type_stdin
-        fi
-        prompt_field 'password'
-        (pass show "$PASS_PATH" || unlock_failed) | type_stdin
+    if [ -z "$PAT" ]; then
+        notify-send -i error -t 4000 'pass' 'Read empty pattern from clipboard.'
     else
-        notify-send \
-            -i error \
-            -t 4000 \
-            "pass" \
-            "No password found for search pattern:
-            <i>'$(xmlstarlet escape "$PAT")'</i>."
+        cd "$PASSWORD_STORE"
+
+        # lookup
+        GPG_PATH="$(find "$PREFIX" -type d -iname "*$PAT*" | head -n 1 | xargs -I '{}' find '{}' -type f | head -n 1)"
+
+        PASS_PATH="${GPG_PATH%.gpg}"
+
+        if [ -n "$PASS_PATH" ]; then
+
+            echo "Using $PASS_PATH"
+
+            USERNAME=`basename "$PASS_PATH"`
+
+            # TODO work arround xdotool bug: prints q when @ requested
+            # TODO try xdotool-git from aur
+            setxkbmap
+
+            # unlock gpg-agent beforehand (TODO with gpg?)
+            pass show "$PASS_PATH" > /dev/null
+            if [ $? -eq 0 ]; then
+                # insert username if requested
+                if [ "$2" = '--login-first' ]; then
+                    prompt_field 'login'
+                    type_arg0 "$USERNAME"
+                fi
+                prompt_field 'password'
+                type_arg0 "$(pass show "$PASS_PATH")"
+            else
+                unlock_failed
+            fi
+
+        else
+            notify-send \
+                -i error \
+                -t 4000 \
+                "pass" \
+                "No password found for search pattern:
+                <i>'$(xmlstarlet escape "$PAT")'</i>."
+        fi
     fi
 fi
