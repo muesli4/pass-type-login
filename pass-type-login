@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# dependencies: libnotify, pass, xclip, xdotool, xmlstarlet, xorg-setxkbmap
+# dependencies: libnotify, pass, xclip, xdotool, xmlstarlet
 
 # This script does the following:
 #     1. Read a pattern to match on a directory within pass from the default clipboard
@@ -59,10 +59,6 @@ else
             echo "Using $PASS_PATH"
 
             USERNAME=`basename "$PASS_PATH"`
-
-            # TODO work arround xdotool bug: prints q when @ requested
-            # TODO try xdotool-git from aur
-            setxkbmap
 
             # unlock gpg-agent beforehand (TODO with gpg?)
             pass show "$PASS_PATH" > /dev/null
