@@ -63,6 +63,10 @@ else
             # unlock gpg-agent beforehand (TODO with gpg?)
             pass show "$PASS_PATH" > /dev/null
             if [ $? -eq 0 ]; then
+                # work around bug in xdotool: https://github.com/jordansissel/xdotool/issues/97
+                # this may not work for all cases unfortunately
+                setxkbmap
+
                 # insert username if requested
                 if [ "$2" = '--login-first' ]; then
                     prompt_field 'login'
