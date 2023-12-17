@@ -2,15 +2,12 @@
 
 # dependencies: libnotify, pass, xclip, xdotool, xmlstarlet
 
-# This script does the following:
-#     1. Read a pattern to match on a directory within pass from the default clipboard
-#     2. Find matched directory within a suffix, discarding multiple matches.
-#     3. Uses the first file within that directory as username and the content as password.
-#     4. Types the username (only when second argument given) and the password
-#        after 2 seconds each, with announcement via libnotify.
-
-PASSWORD_STORE="$HOME/.password-store"
+if [ -z "$PASSWORD_STORE" ]; then
+    PASSWORD_STORE="$HOME/.password-store"
+fi
 PROMPT_DELAY_SECONDS=2
+PREFIX=web/
+WITH_LOGIN=0
 
 unlock_failed() {
     echo "No password given." >&2
@@ -23,68 +20,114 @@ prompt_field() {
 }
 
 type_arg0() {
-    xdotool type "$1"
+    xdotool type -- "$1"
 }
 
 print_usage() {
-    echo "Usage:"
-    echo "    $0 PREFIX [--with-login]"
+    echo 'Usage:'
+    echo "    $0 ..."
     echo
-    echo "    PREFIX            The prefix within the pass directory to look in."
+    echo '    Type a password from pass.'
     echo
-    echo "    --login-first     Type the login first and then the password."
+    echo '    --prefix PREFIX          The prefix to search in.'
+    echo '    --pattern PATTERN        The pattern to search for.'
+    echo '    --with-login             Additionally, type the login first.'
+    echo '    --prompt-delay DELAY     The delay in seconds between the prompt'
+    echo '                             and typing.'
+    echo '    --password-store PATH    Override PASSWORD_STORE environment'
+    echo '                             variable.'
+    echo '    --help                   Display this help.'
 }
 
-if [ "$#" -eq 0 ]; then
-    print_usage
-else
-    # prefix to look at
-    PREFIX="$1"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -l|--with-login)
+            WITH_LOGIN=1
+            ;;
+        -d|--prompt-delay)
+            shift
+            PROMPT_DELAY_SECONDS="$1"
+            ;;
+        -p|--pattern)
+            shift
+            PATTERN="$1"
+            ;;
+        --prefix)
+            shift
+            PREFIX="$1"
+            ;;
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
+        -s|--password-store)
+            shift
+            PASSWORD_STORE="$1"
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
+    shift
+done
 
+if [ -z "$PREFIX" ]; then
+    notify-send -i error -t 4000 'pass' 'Missing prefix.'
+    exit 1
+fi
+
+if [ -z "$PATTERN" ]; then
     # read search pattern from clipboard
-    PAT="$(xclip -o)"
-
-    if [ -z "$PAT" ]; then
+    PATTERN="$(xclip -o)"
+    if [ -z "$PATTERN" ]; then
         notify-send -i error -t 4000 'pass' 'Read empty pattern from clipboard.'
-    else
-        cd "$PASSWORD_STORE"
-
-        # lookup
-        GPG_PATH="$(find "$PREFIX" -type d -iname "*$PAT*" | head -n 1 | xargs -I '{}' find '{}' -type f | head -n 1)"
-
-        PASS_PATH="${GPG_PATH%.gpg}"
-
-        if [ -n "$PASS_PATH" ]; then
-
-            echo "Using $PASS_PATH"
-
-            USERNAME=`basename "$PASS_PATH"`
-
-            # unlock gpg-agent beforehand (TODO with gpg?)
-            pass show "$PASS_PATH" > /dev/null
-            if [ $? -eq 0 ]; then
-                # work around bug in xdotool: https://github.com/jordansissel/xdotool/issues/97
-                # this may not work for all cases unfortunately
-                setxkbmap
-
-                # insert username if requested
-                if [ "$2" = '--login-first' ]; then
-                    prompt_field 'login'
-                    type_arg0 "$USERNAME"
-                fi
-                prompt_field 'password'
-                type_arg0 "$(pass show "$PASS_PATH")"
-            else
-                unlock_failed
-            fi
-
-        else
-            notify-send \
-                -i error \
-                -t 4000 \
-                "pass" \
-                "No password found for search pattern:
-                <i>'$(xmlstarlet escape "$PAT")'</i>."
-        fi
+        exit 1
     fi
+fi
+
+cd "$PASSWORD_STORE"
+
+# lookup
+GPG_PATH="$(find "$PREFIX" -type d -iname "*$PATTERN*" | head -n 1 | xargs -I '{}' find '{}' -type f | head -n 1)"
+
+PASS_PATH="${GPG_PATH%.gpg}"
+
+if [ -n "$PASS_PATH" ]; then
+
+    echo "Using $PASS_PATH"
+
+    USERNAME=`basename "$PASS_PATH"`
+
+    # unlock gpg-agent beforehand (TODO with gpg?)
+    pass show "$PASS_PATH" > /dev/null
+    if [ $? -eq 0 ]; then
+        # work around bug in xdotool: https://github.com/jordansissel/xdotool/issues/97
+        # this may not work for all cases unfortunately
+        setxkbmap
+
+        # insert username if requested
+        if [ "$WITH_LOGIN" == 1 ]; then
+            prompt_field 'login'
+            type_arg0 "$USERNAME"
+        fi
+        prompt_field 'password'
+        type_arg0 "$(pass show "$PASS_PATH")"
+    else
+        unlock_failed
+    fi
+
+else
+    notify-send \
+        -i error \
+        -t 4000 \
+        "pass" \
+        "No password found for search pattern:
+        <i>'$(xmlstarlet escape "$PAT")'</i>."
+    exit 1
 fi
